@@ -1,10 +1,11 @@
-from flask import Flask, render_template_string, request, redirect, url_for, session
-from datetime import datetime, timedelta
+from flask import Flask, request, redirect, url_for, session, render_template_string
+from datetime import datetime
+import os
 
 app = Flask(__name__)
 app.secret_key = 'clave-secreta'
 
-# Usuarios múltiples
+# Base de datos de usuarios
 USUARIOS = {
     "1016730173": {
         "password": "E2025*BOG",
@@ -22,249 +23,242 @@ USUARIOS = {
     }
 }
 
-MAX_INTENTOS = 3
-TIEMPO_EXPIRACION = timedelta(minutes=3)
+# === PÁGINAS HTML ===
 
-estilos = """
-<style>
-    body {
-        margin: 0;
-        font-family: 'Segoe UI', sans-serif;
-        background: linear-gradient(to bottom right, #0f2027, #203a43, #2c5364);
-        color: white;
-        text-align: center;
-        padding-top: 100px;
-    }
-    input, button {
-        padding: 10px;
-        margin: 10px;
-        border-radius: 5px;
-        border: none;
-        font-size: 16px;
-    }
-    button {
-        background-color: #4CAF50;
-        color: white;
-        cursor: pointer;
-    }
-    button:hover {
-        background-color: #45a049;
-    }
-    .mensaje {
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 12px 16px;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-size: 16px;
-        z-index: 9999;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-    }
-    .verde { background-color: #4CAF50; color: white; }
-    .rojo { background-color: #f44336; color: white; }
-    .azul { background-color: #2196F3; color: white; }
-    .amarillo { background-color: #ff9800; color: white; }
-    .rango {
-        position: fixed;
-        top: 20px;
-        left: 20px;
-        padding: 10px;
-        background-color: #444;
-        border-radius: 8px;
-        font-size: 14px;
-        opacity: 0.85;
-    }
-</style>
-<script>
-    setTimeout(function() {
-        const alerta = document.getElementById('alerta');
-        if (alerta) alerta.remove();
-    }, 3000);
-</script>
-"""
-
-login_html = """
+LOGIN_HTML = '''
 <!DOCTYPE html>
-<html lang="es">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Intranet - Iniciar Sesión</title>
-    """ + estilos + """
+    <title>Intranet Vandoel - Login</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif; background: #eef2f3;
+            display: flex; justify-content: center; align-items: center;
+            height: 100vh; margin: 0;
+        }
+        .login-box {
+            background: white; padding: 30px; border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            width: 300px;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%; padding: 10px; margin: 10px 0; border-radius: 5px; border: 1px solid #ccc;
+        }
+        button {
+            width: 100%; padding: 10px; background: #0057b8; color: white;
+            border: none; border-radius: 5px; cursor: pointer;
+        }
+        .error {
+            color: red; text-align: center; margin-top: 10px;
+        }
+    </style>
 </head>
 <body>
-    {% if mensaje %}
-    <div class="mensaje {{color}}" id="alerta">
-        {{icono}} {{mensaje}}
-    </div>
-    <audio autoplay><source src="{{ url_for('static', filename=audio) }}" type="audio/mpeg"></audio>
-    {% endif %}
-
-    <h2>Acceso a la Intranet</h2>
-    <form method="post">
-        <input name="usuario" placeholder="ID" required><br>
-        <input name="password" type="password" placeholder="Contraseña" required><br>
+    <form method="post" class="login-box">
+        <h2>Iniciar Sesión</h2>
+        <input type="text" name="usuario" placeholder="ID" required>
+        <input type="password" name="clave" placeholder="Contraseña" required>
         <button type="submit">Ingresar</button>
+        {% if error %}
+        <p class="error">{{ error }}</p>
+        {% endif %}
     </form>
 </body>
 </html>
-"""
+'''
 
-home_html = """
+HOME_HTML = '''
 <!DOCTYPE html>
-<html lang="es">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Bienvenido</title>
-    """ + estilos + """
-    <script>
-        setTimeout(function() {
-            window.location.href = "{{ url_for('logout', msg='auto') }}";
-        }, 180000);
-    </script>
+    <title>Bienvenido {{ nombre }}</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #f9f9f9;
+            margin: 0; padding: 0;
+        }
+        .top-bar {
+            background: #004085;
+            color: white;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .admin-button {
+            background: #ffc107;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .logout {
+            color: white;
+            text-decoration: none;
+            font-weight: bold;
+        }
+    </style>
 </head>
-<body onload="document.getElementById('audio').play()">
-    {% if mensaje %}
-    <div class="mensaje {{color}}" id="alerta">
-        {{icono}} {{mensaje}}
+<body>
+    <div class="top-bar">
+        <div>Bienvenido al sistema, {{ nombre }} | Rango: {{ rango }}</div>
+        <div>
+            {% if rango == 'admin' %}
+            <a href="{{ url_for('admin_panel') }}"><button class="admin-button">⚙️ Opciones de administrador</button></a>
+            {% endif %}
+            <a href="{{ url_for('logout') }}" class="logout">Cerrar sesión</a>
+        </div>
     </div>
-    <audio id="audio" autoplay>
-        <source src="{{ url_for('static', filename=audio) }}" type="audio/mpeg">
+
+    {% if audio %}
+    <audio autoplay>
+        <source src="{{ url_for('static', filename=audio) }}" type="audio/mp3">
     </audio>
     {% endif %}
-    <div class="rango">🔰 {{ rango|capitalize }}</div>
-    <h2>{{ icono }} {{ mensaje }}</h2>
-    <h3>Bienvenido al sistema, {{ usuario }}</h3>
-
-    <button onclick="location.href='{{ url_for('logout', msg='manual') }}'">Cerrar Sesión</button>
 </body>
 </html>
-"""
+'''
 
-@app.route("/", methods=["GET", "POST"])
+ADMIN_HTML = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Panel de administrador</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 30px;
+            background: #f4f4f4;
+        }
+        h2 { margin-top: 0; }
+        form {
+            background: white; padding: 20px;
+            border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        input, select {
+            padding: 10px; width: 100%;
+            margin: 10px 0; border: 1px solid #ccc; border-radius: 5px;
+        }
+        button {
+            background: #007bff; color: white; border: none;
+            padding: 10px 20px; border-radius: 5px; cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h2>⚙️ Panel de administrador</h2>
+
+    <form method="post" action="{{ url_for('agregar_usuario') }}">
+        <h3>Agregar nuevo usuario</h3>
+        <input type="text" name="nuevo_id" placeholder="ID del nuevo usuario" required>
+        <input type="text" name="nuevo_nombre" placeholder="Nombre completo" required>
+        <input type="password" name="nuevo_password" placeholder="Contraseña" required>
+        <select name="nuevo_rango">
+            <option value="local">Local</option>
+            <option value="admin">Administrador</option>
+        </select>
+        <button type="submit">Agregar</button>
+    </form>
+
+    <form method="post" action="{{ url_for('reset_password') }}">
+        <h3>Restablecer contraseña</h3>
+        <input type="text" name="usuario_id" placeholder="ID del usuario" required>
+        <input type="password" name="nueva_contrasena" placeholder="Nueva contraseña" required>
+        <button type="submit">Restablecer</button>
+    </form>
+
+    <a href="{{ url_for('home') }}">⬅️ Volver</a>
+</body>
+</html>
+'''
+
+# === RUTAS ===
+
+@app.route('/', methods=['GET', 'POST'])
 def login():
-    if "intentos" not in session:
-        session["intentos"] = MAX_INTENTOS
+    if request.method == 'POST':
+        usuario = request.form['usuario']
+        clave = request.form['clave']
+        now = datetime.now()
 
-    if request.method == "POST":
-        user = request.form["usuario"]
-        pwd = request.form["password"]
+        if usuario in USUARIOS and USUARIOS[usuario]["password"] == clave:
+            session['usuario'] = usuario
+            session['nombre'] = USUARIOS[usuario]["nombre"]
+            session['rango'] = USUARIOS[usuario]["rango"]
 
-        datos = USUARIOS.get(user)
-        if not datos:
-            session["mensaje"] = "¡Revisa el ID!"
-            session["color"] = "amarillo"
-            session["icono"] = "⚠️"
-            session["audio"] = "error_id.mp3"
-            return redirect(url_for("login"))
+            ultimo = session.get('ultimo_login')
+            session['ultimo_login'] = now.strftime('%Y-%m-%d %H:%M:%S')
 
-        if pwd != datos["password"]:
-            session["intentos"] -= 1
-            intentos = session["intentos"]
-            if intentos == 2:
-                mensaje = "Contraseña incorrecta. Quedan 2 intentos."
-                audio = "error_2.mp3"
-            elif intentos == 1:
-                mensaje = "Contraseña incorrecta. Queda 1 intento."
-                audio = "error_1.mp3"
+            if ultimo:
+                ultimo_dt = datetime.strptime(ultimo, '%Y-%m-%d %H:%M:%S')
+                segundos = (now - ultimo_dt).total_seconds()
+                audio = USUARIOS[usuario]["audio_bienvenido_de_nuevo"] if segundos > 60 else USUARIOS[usuario]["audio_bienvenido"]
             else:
-                mensaje = "Demasiados intentos. Ingrese más tarde."
-                audio = "error_0.mp3"
+                audio = USUARIOS[usuario]["audio_bienvenido"]
 
-            session["mensaje"] = mensaje
-            session["color"] = "rojo"
-            session["icono"] = "❌"
-            session["audio"] = audio
-            return redirect(url_for("login"))
-
-        ahora = datetime.now()
-        ultima = session.get("ultimo_login")
-        session["usuario"] = datos["nombre"]
-        session["rango"] = datos["rango"]
-        session["ultimo_login"] = ahora.isoformat()
-        session["intentos"] = MAX_INTENTOS
-
-        if ultima:
-            antes = datetime.fromisoformat(ultima)
-            audio = datos["audio_bienvenido_de_nuevo"] if ahora - antes > timedelta(minutes=1) else datos["audio_bienvenido"]
+            return redirect(url_for('home', audio=audio))
         else:
-            audio = datos["audio_bienvenido"]
+            return render_template_string(LOGIN_HTML, error="ID o contraseña incorrectos")
+    return render_template_string(LOGIN_HTML)
 
-        session["audio"] = audio
-        return redirect(url_for("home"))
-
-    mensaje = session.pop("mensaje", None)
-    color = session.pop("color", "")
-    icono = session.pop("icono", "")
-    audio = session.pop("audio", "")
-
-    return render_template_string(login_html,
-        mensaje=mensaje,
-        color=color,
-        icono=icono,
-        audio=audio)
-
-@app.route("/home")
+@app.route('/home')
 def home():
-    if "usuario" in session:
-        audio = session.get("audio", "bienvenido.mp3")
-        mensaje = "Bienvenido " + session["usuario"] if "de_nuevo" not in audio else "Bienvenido de nuevo, " + session["usuario"]
-        return render_template_string(home_html,
-            usuario=session["usuario"],
-            rango=session.get("rango", ""),
-            mensaje=mensaje,
-            color="verde",
-            icono="✅",
-            audio=audio)
-    return redirect(url_for("login"))
+    if 'usuario' not in session:
+        return redirect(url_for('login'))
 
-@app.route("/logout", methods=["GET", "POST"])
+    nombre = session.get('nombre')
+    rango = session.get('rango')
+    audio = request.args.get('audio')
+
+    return render_template_string(HOME_HTML, nombre=nombre, rango=rango, audio=audio)
+
+@app.route('/logout')
 def logout():
     session.clear()
+    return redirect(url_for('login'))
 
-    mensaje = "Cerrando sesión..."
-    audio = "cerrar_sesion.mp3"
-    color = "azul"
-    icono = "🕓"
+@app.route('/admin/opciones')
+def admin_panel():
+    if 'usuario' not in session or session.get('rango') != 'admin':
+        return redirect(url_for('home'))
+    return render_template_string(ADMIN_HTML)
 
-    html_logout = """
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-        <meta charset="UTF-8">
-        <title>Cerrando sesión</title>
-        """ + estilos + """
-        <script>
-            setTimeout(function() {
-                window.location.href = "/";
-            }, 3000);
-        </script>
-    </head>
-    <body>
-        <div class="mensaje {{color}}" id="alerta">
-            {{icono}} {{mensaje}}
-        </div>
-        <audio autoplay>
-            <source src="{{ url_for('static', filename=audio) }}" type="audio/mpeg">
-        </audio>
-        <h2>{{ icono }} {{ mensaje }}</h2>
-    </body>
-    </html>
-    """
+@app.route('/admin/agregar', methods=['POST'])
+def agregar_usuario():
+    if session.get('rango') != 'admin':
+        return redirect(url_for('home'))
 
-    return render_template_string(html_logout,
-        mensaje=mensaje,
-        color=color,
-        icono=icono,
-        audio=audio)
+    nuevo_id = request.form['nuevo_id']
+    nuevo_nombre = request.form['nuevo_nombre']
+    nuevo_password = request.form['nuevo_password']
+    nuevo_rango = request.form['nuevo_rango']
 
-import os
+    if nuevo_id not in USUARIOS:
+        USUARIOS[nuevo_id] = {
+            "password": nuevo_password,
+            "nombre": nuevo_nombre,
+            "rango": nuevo_rango,
+            "audio_bienvenido": "bienvenido.mp3",
+            "audio_bienvenido_de_nuevo": "bienvenido_de_nuevo.mp3"
+        }
+    return redirect(url_for('admin_panel'))
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+@app.route('/admin/reset_password', methods=['POST'])
+def reset_password():
+    if session.get('rango') != 'admin':
+        return redirect(url_for('home'))
 
+    usuario_id = request.form['usuario_id']
+    nueva = request.form['nueva_contrasena']
+
+    if usuario_id in USUARIOS:
+        USUARIOS[usuario_id]['password'] = nueva
+    return redirect(url_for('admin_panel'))
+
+# === MAIN ===
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0')
 
 
